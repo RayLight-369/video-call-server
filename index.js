@@ -13,12 +13,7 @@ const io = new SocketIO.Server( server, {
 const PORT = 3030;
 app.use( cors() );
 
-app.get( "/", ( _, res ) => {
-  res.send( "Hello, world!" );
-} );
-
-// socket.id → { name, room, peerId }
-const users = new Map();
+const users = new Map(); // socket.id => { name, room, peerId }
 
 io.on( "connection", socket => {
   console.log( socket.id, "connected" );
@@ -28,25 +23,27 @@ io.on( "connection", socket => {
     socket.join( room );
     console.log( `${ name } joined room: ${ room }` );
 
-    // Send all peerIds in the same room (except self)
-    const roomUsers = Array.from( users.entries() )
-      .filter( ( [ _, user ] ) => user.room === room && user.peerId !== peerId )
-      .map( ( [ _, user ] ) => ( { peerId: user.peerId, name: user.name } ) );
+    // Notify others in the room
+    socket.to( room ).emit( "user-joined", { name } );
 
-    socket.emit( "users-in-room", roomUsers );
+    // Send updated user list to all in room
+    const roomUsers = Array.from( users.values() ).filter( u => u.room === room );
+    io.to( room ).emit( "users-in-room", roomUsers );
   } );
 
   socket.on( "disconnect", () => {
     const user = users.get( socket.id );
     if ( user ) {
-      console.log( `${ user.name } left room: ${ user.room }` );
+      const { room, name } = user;
+      console.log( `${ name } left room: ${ room }` );
       users.delete( socket.id );
-      socket.to( user.room ).emit( "users-in-room", Array.from( users.entries() )
-        .filter( ( [ _, u ] ) => u.room === user.room )
-        .map( ( [ _, u ] ) => ( { peerId: u.peerId, name: u.name } ) )
-      );
-    } else {
-      console.log( socket.id, "disconnected" );
+
+      // Notify room
+      socket.to( room ).emit( "user-left", { name } );
+
+      // Update participant list
+      const roomUsers = Array.from( users.values() ).filter( u => u.room === room );
+      io.to( room ).emit( "users-in-room", roomUsers );
     }
   } );
 } );
