@@ -6,7 +6,7 @@ const server = http.createServer( app );
 const SocketIO = require( "socket.io" );
 const io = new SocketIO.Server( server, {
   cors: {
-    origin: [ "http://localhost:3000", "https://video-call-server-vvga.onrender.com" ]
+    origin: [ "http://localhost:3000", "https://voice-call-flax.vercel.app" ]
   }
 } );
 
