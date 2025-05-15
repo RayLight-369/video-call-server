@@ -4,6 +4,7 @@ const cors = require( "cors" );
 const app = express();
 const server = http.createServer( app );
 const SocketIO = require( "socket.io" );
+
 const io = new SocketIO.Server( server, {
   cors: {
     origin: [ "http://localhost:3000", "https://voice-call-flax.vercel.app" ],
@@ -14,8 +15,9 @@ const PORT = 3030;
 app.use( cors() );
 
 const users = new Map(); // socket.id => { name, room, peerId }
+const screenSharers = new Map(); // room => Set<name>
 
-io.on( "connection", socket => {
+io.on( "connection", ( socket ) => {
   console.log( socket.id, "connected" );
 
   socket.on( "join-room", ( { name, room, peerId } ) => {
@@ -23,12 +25,28 @@ io.on( "connection", socket => {
     socket.join( room );
     console.log( `${ name } joined room: ${ room }` );
 
-    // Notify others in the room
-    socket.to( room ).emit( "user-joined", { name } );
+    const roomUsers = Array.from( users.values() ).filter( ( u ) => u.room === room );
+    const sharers = Array.from( screenSharers.get( room ) || [] );
 
-    // Send updated user list to all in room
-    const roomUsers = Array.from( users.values() ).filter( u => u.room === room );
+    // Notify the new user
+    socket.emit( "users-in-room", roomUsers );
+    socket.emit( "screen-sharers", sharers );
+
+    // Notify others
+    socket.to( room ).emit( "user-joined", { name } );
     io.to( room ).emit( "users-in-room", roomUsers );
+  } );
+
+  socket.on( "start-screen-share", ( { name, room } ) => {
+    if ( !screenSharers.has( room ) ) screenSharers.set( room, new Set() );
+    screenSharers.get( room ).add( name );
+    socket.to( room ).emit( "screen-share-started", name );
+  } );
+
+  socket.on( "stop-screen-share", ( { name, room } ) => {
+    const sharers = screenSharers.get( room );
+    if ( sharers ) sharers.delete( name );
+    socket.to( room ).emit( "screen-share-stopped", name );
   } );
 
   socket.on( "disconnect", () => {
@@ -38,14 +56,18 @@ io.on( "connection", socket => {
       console.log( `${ name } left room: ${ room }` );
       users.delete( socket.id );
 
-      // Notify room
       socket.to( room ).emit( "user-left", { name } );
 
-      // Update participant list
-      const roomUsers = Array.from( users.values() ).filter( u => u.room === room );
+      const sharers = screenSharers.get( room );
+      if ( sharers ) {
+        sharers.delete( name );
+        socket.to( room ).emit( "screen-share-stopped", name );
+      }
+
+      const roomUsers = Array.from( users.values() ).filter( ( u ) => u.room === room );
       io.to( room ).emit( "users-in-room", roomUsers );
     }
   } );
 } );
 
-server.listen( PORT, () => console.log( `✅ Server running on port ${ PORT }` ) ); //running on port
+server.listen( PORT, () => console.log( `✅ Server running on port ${ PORT }` ) );
