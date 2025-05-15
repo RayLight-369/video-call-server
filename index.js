@@ -14,6 +14,9 @@ const io = new SocketIO.Server( server, {
 const PORT = 3030;
 app.use( cors() );
 
+app.get( "/", ( _, res ) => res.send( "Hello World!" ) );
+
+
 const users = new Map(); // socket.id => { name, room, peerId }
 const screenSharers = new Map(); // room => Set<name>
 
